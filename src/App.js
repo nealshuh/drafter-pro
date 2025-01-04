@@ -245,7 +245,7 @@ const TextEditor = () => {
         break;
       case 'rephrase':
         if (selectedText) {
-          setIsLLMPanelOpen(true); 
+          setIsLLMPanelOpen(true);  
           const prompt = `Rephrase this sentence to make it better given the context of the document:\n\n${selectedText}\nRespond with just the sentence in the exact format with all correct syntax, grammar and punctuation`;
           setCurrentMessage(prompt);
           // Trigger send message
