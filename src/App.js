@@ -10,10 +10,13 @@ import {
   MessageSquare,
   X,
   Send,
-  Check
+  Check,
+  Copy,
+  Scissors,
+  Clipboard
 } from 'lucide-react';
 import { callClaudeAPI, callOpenAIAPI, callTogetherAPI } from './api';
-import './editor.css'
+import './editor.css';
 
 const TextEditor = () => {
   const [isLLMPanelOpen, setIsLLMPanelOpen] = useState(false);
@@ -22,8 +25,11 @@ const TextEditor = () => {
   const [selectedLLMs, setSelectedLLMs] = useState(['claude', 'chatgpt']);
   const [pages, setPages] = useState([{ id: 1 }]);
   const [isLoading, setIsLoading] = useState({});
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
   const pageRefsMap = useRef(new Map());
   const messagesEndRef = useRef(null);
+  const [rephraseRanges, setRephraseRanges] = useState(new Map());
+  const [hoveredMessage, setHoveredMessage] = useState(null);
 
   const llmOptions = [
     { id: 'claude', name: 'Claude', color: 'claude' },
@@ -48,6 +54,19 @@ const TextEditor = () => {
       }
     }
   }, [pages]);
+
+  const [selectedText, setSelectedText] = useState('');
+
+  const getDocumentContent = () => {
+    let fullContent = '';
+    pages.forEach(page => {
+      const pageRef = pageRefsMap.current.get(page.id)?.current;
+      if (pageRef) {
+        fullContent += pageRef.innerText + ' ';
+      }
+    });
+    return fullContent.trim();
+  };
 
   const handleInput = async (pageIndex, event) => {
     const currentPageId = pages[pageIndex].id;
@@ -187,11 +206,70 @@ const TextEditor = () => {
     );
   };
 
+  const handleContextMenu = (event) => {
+    event.preventDefault();
+    
+    // Get the current selection before showing the context menu
+    const selection = window.getSelection();
+    const text = selection.toString();
+    setSelectedText(text);
+    
+    // Store the selection range for later use
+    const range = selection.getRangeAt(0);
+    
+    setContextMenu({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      hasSelection: text.length > 0,
+      range: range
+    });
+  };
+
+  const handleContextMenuAction = async (action) => {
+    if (contextMenu.range && (action === 'copy' || action === 'cut' || action === 'rephrase')) {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(contextMenu.range);
+    }
+
+    switch (action) {
+      case 'copy':
+        document.execCommand('copy');
+        break;
+      case 'cut':
+        document.execCommand('cut');
+        break;
+      case 'paste':
+        document.execCommand('paste');
+        break;
+      case 'rephrase':
+        if (selectedText) {
+          setIsLLMPanelOpen(true);
+          const prompt = `Rephrase this sentence to make it better given the context of the document:\n\n${selectedText}\nRespond with just the sentence in the exact format with all correct syntax, grammar and punctuation`;
+          setCurrentMessage(prompt);
+          // Trigger send message
+          const event = { preventDefault: () => {}, type: 'click' };
+          handleSendMessage(event);
+        }
+        break;
+      default:
+        break;
+    }
+    setContextMenu({ visible: false, x: 0, y: 0 });
+    setSelectedText('');
+  };
+
   const handleSendMessage = async (e) => {
     if ((e.key === 'Enter' && !e.shiftKey) || e.type === 'click') {
       e.preventDefault();
       if (currentMessage.trim()) {
         const messageId = Date.now();
+        
+        // Get document content
+        const documentContent = getDocumentContent();
+        
+        // Create the message object that will be displayed
         const newMessage = {
           id: messageId,
           text: currentMessage,
@@ -201,12 +279,15 @@ const TextEditor = () => {
           }), {}),
           timestamp: new Date().toISOString()
         };
-
+  
         setMessages(prev => [...prev, newMessage]);
         setCurrentMessage('');
         scrollToBottom();
-
-        // Make API calls for each selected LLM
+  
+        // Prepare the full message with context
+        const messageWithContext = `Context: ${documentContent}\n\n${currentMessage}`;
+  
+        // Make API calls for each selected LLM with the context-enhanced message
         selectedLLMs.forEach(async (llm) => {
           setIsLoading(prev => ({ ...prev, [messageId]: true }));
           
@@ -214,18 +295,18 @@ const TextEditor = () => {
             let response;
             switch (llm) {
               case 'claude':
-                response = await callClaudeAPI(currentMessage);
+                response = await callClaudeAPI(messageWithContext);
                 break;
               case 'chatgpt':
-                response = await callOpenAIAPI(currentMessage, 'gpt-4o-mini');
+                response = await callOpenAIAPI(messageWithContext, 'gpt-4');
                 break;
-              case 'gpt4':
-                response = await callTogetherAPI(currentMessage);
+              case 'llama':
+                response = await callTogetherAPI(messageWithContext, 'meta-llama/Llama-3-70b-chat-hf');
                 break;
               default:
                 response = 'Model not supported';
             }
-
+  
             setMessages(prev => prev.map(msg => {
               if (msg.id === messageId) {
                 return {
@@ -262,6 +343,34 @@ const TextEditor = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Handle context menu updates
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu.visible) {
+        setContextMenu({ visible: false, x: 0, y: 0 });
+      }
+    };
+
+    const handleSelectionChange = () => {
+      if (contextMenu.visible) {
+        const selection = window.getSelection();
+        const hasSelection = selection.toString().length > 0;
+        setContextMenu(prev => ({
+          ...prev,
+          hasSelection
+        }));
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    document.addEventListener('selectionchange', handleSelectionChange);
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [contextMenu.visible]);
 
   return (
     <div className="editor-container">
@@ -304,7 +413,11 @@ const TextEditor = () => {
         {/* Document Area */}
         <div className={`document-area ${isLLMPanelOpen ? 'split' : 'full'}`}>
           {pages.map((page, index) => (
-            <div key={page.id} className="document-page">
+            <div 
+              key={page.id} 
+              className="document-page"
+              onContextMenu={handleContextMenu}
+            >
               <div className="page-margins">
                 <div
                   ref={getOrCreateRef(page.id)}
@@ -380,6 +493,57 @@ const TextEditor = () => {
                 <Send size={16} />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Context Menu */}
+        {contextMenu.visible && (
+          <div 
+            className="context-menu"
+            style={{ 
+              position: 'fixed',
+              top: contextMenu.y,
+              left: contextMenu.x,
+              zIndex: 1000,
+              backgroundColor: 'white',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+              padding: '4px 0',
+              minWidth: '150px'
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {selectedText && (
+              <>
+                <button
+                  className="context-menu-item"
+                  onClick={() => handleContextMenuAction('copy')}
+                >
+                  <Copy size={16} className="mr-2" /> Copy
+                </button>
+                <button
+                  className="context-menu-item"
+                  onClick={() => handleContextMenuAction('cut')}
+                >
+                  <Scissors size={16} className="mr-2" /> Cut
+                </button>
+              </>
+            )}
+            <button
+              className="context-menu-item"
+              onClick={() => handleContextMenuAction('paste')}
+            >
+              <Clipboard size={16} className="mr-2" /> Paste
+            </button>
+            {selectedText && (
+              <button
+                className="context-menu-item"
+                onClick={() => handleContextMenuAction('rephrase')}
+              >
+                <MessageSquare size={16} className="mr-2" /> Rephrase
+              </button>
+            )}
           </div>
         )}
       </div>

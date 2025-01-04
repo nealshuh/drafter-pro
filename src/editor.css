@@ -216,6 +216,8 @@
   padding: 12px;
   border-radius: 4px;
   margin-bottom: 8px;
+  transition: all 0.2s ease-in-out;
+  position: relative;
 }
 
 .llm-response .llm-name {
@@ -343,4 +345,38 @@
     right: var(--margin-size);
     bottom: var(--margin-size);
   }
+}
+
+/* Message container hover states */
+.message:hover .llm-response {
+  opacity: 0.6; /* Slightly fade out non-hovered responses */
+}
+
+/* Individual response hover states - intensify colors */
+.message:hover .llm-response.claude:hover {
+  background-color: rgba(200, 227, 255, 0.9); /* More intense blue */
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.message:hover .llm-response.chatgpt:hover {
+  background-color: rgba(198, 246, 213, 0.9); /* More intense green */
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.message:hover .llm-response.llama:hover {
+  background-color: rgba(255, 213, 179, 0.9); /* More intense orange */
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+/* Normal state when not hovering over message container */
+.message:not(:hover) .llm-response {
+  opacity: 1;
+}
+
+/* Add a subtle transition for smoother effects */
+.llm-response {
+  transition: all 0.2s ease-in-out;
 }
