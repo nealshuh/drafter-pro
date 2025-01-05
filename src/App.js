@@ -232,7 +232,7 @@ const TextEditor = () => {
       selection.removeAllRanges();
       selection.addRange(contextMenu.range);
     }
-
+  
     switch (action) {
       case 'copy':
         document.execCommand('copy');
@@ -248,9 +248,33 @@ const TextEditor = () => {
           setIsLLMPanelOpen(true);  
           const prompt = `Rephrase this sentence to make it better given the context of the document:\n\n${selectedText}\nRespond with just the sentence in the exact format with all correct syntax, grammar and punctuation`;
           setCurrentMessage(prompt);
-          // Trigger send message
+          
+          // Generate a message ID now so we can use it for both the message and range
+          const messageId = Date.now();
+          
+          // Store the range with the message ID
+          const newRange = contextMenu.range.cloneRange(); // Clone the range
+          
+          console.log('Storing range for message:', messageId);
+          console.log('Range details:', {
+            startOffset: newRange.startOffset,
+            endOffset: newRange.endOffset,
+            selectedText: selectedText,
+            rangeContent: newRange.toString()
+          });
+          
+          setRephraseRanges(prev => {
+            const updatedRanges = new Map(prev).set(messageId, {
+              range: newRange,
+              originalText: selectedText
+            });
+            console.log('Updated rephraseRanges:', Object.fromEntries(updatedRanges));
+            return updatedRanges;
+          });
+          
+          // Trigger send message with the same ID
           const event = { preventDefault: () => {}, type: 'click' };
-          handleSendMessage(event);
+          handleSendMessage(event, messageId);
         }
         break;
       default:
@@ -260,11 +284,14 @@ const TextEditor = () => {
     setSelectedText('');
   };
 
-  const handleSendMessage = async (e) => {
+  const handleSendMessage = async (e, providedMessageId = null) => {
     if ((e.key === 'Enter' && !e.shiftKey) || e.type === 'click') {
       e.preventDefault();
       if (currentMessage.trim()) {
-        const messageId = Date.now();
+        const messageId = providedMessageId || Date.now();
+        
+        console.log('Sending message with ID:', messageId);
+        console.log('Current rephraseRanges:', Object.fromEntries(rephraseRanges));
         
         // Get document content
         const documentContent = getDocumentContent();
@@ -280,14 +307,16 @@ const TextEditor = () => {
           timestamp: new Date().toISOString()
         };
   
+        console.log('Created new message:', newMessage);
+    
         setMessages(prev => [...prev, newMessage]);
         setCurrentMessage('');
         scrollToBottom();
-  
+    
         // Prepare the full message with context
         const messageWithContext = `Context: ${documentContent}\n\n${currentMessage}`;
-  
-        // Make API calls for each selected LLM with the context-enhanced message
+    
+        // Make API calls for each selected LLM
         selectedLLMs.forEach(async (llm) => {
           setIsLoading(prev => ({ ...prev, [messageId]: true }));
           
@@ -306,7 +335,9 @@ const TextEditor = () => {
               default:
                 response = 'Model not supported';
             }
-  
+    
+            console.log(`Response from ${llm} for message ${messageId}:`, response);
+            
             setMessages(prev => prev.map(msg => {
               if (msg.id === messageId) {
                 return {
@@ -320,6 +351,8 @@ const TextEditor = () => {
               return msg;
             }));
           } catch (error) {
+            console.error(`Error from ${llm} for message ${messageId}:`, error);
+            
             setMessages(prev => prev.map(msg => {
               if (msg.id === messageId) {
                 return {
