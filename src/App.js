@@ -298,7 +298,7 @@ const TextEditor = () => {
                 response = await callClaudeAPI(messageWithContext);
                 break;
               case 'chatgpt':
-                response = await callOpenAIAPI(messageWithContext, 'gpt-4');
+                response = await callOpenAIAPI(messageWithContext, 'gpt-4o-mini');
                 break;
               case 'llama':
                 response = await callTogetherAPI(messageWithContext, 'meta-llama/Llama-3-70b-chat-hf');
