@@ -9,6 +9,14 @@
   --border-color: #e0e0e0;
   --hover-color: #f0f0f0;
   --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  /* LLM Theme Colors */
+  --claude-color: rgba(200, 227, 255, 0.9);
+  --claude-hover: rgba(200, 227, 255, 0.3);
+  --chatgpt-color: rgba(198, 246, 213, 0.9);
+  --chatgpt-hover: rgba(198, 246, 213, 0.3);
+  --llama-color: rgba(255, 213, 179, 0.9);
+  --llama-hover: rgba(255, 213, 179, 0.3);
 }
 
 /* Editor Container */
@@ -103,10 +111,10 @@
 
 .page-content {
   position: absolute;
-  top: var(--margin-size);
+  top: 0;
   left: 0;
   right: 0;
-  bottom: var(--margin-size);
+  bottom: 0;
   outline: none;
   overflow: hidden;
   word-wrap: break-word;
@@ -123,14 +131,6 @@
 
 .page-content * {
   max-width: 100%;
-}
-
-.page-content::selection {
-  background: rgba(65, 105, 225, 0.2);
-}
-
-.page-content::-moz-selection {
-  background: rgba(65, 105, 225, 0.2);
 }
 
 .page-number {
@@ -187,6 +187,7 @@
   border-color: var(--primary-color);
 }
 
+/* Messages Area */
 .messages-area {
   flex: 1;
   overflow-y: auto;
@@ -217,6 +218,7 @@
   margin-bottom: 8px;
   transition: all 0.2s ease-in-out;
   position: relative;
+  cursor: pointer;
 }
 
 .llm-response .llm-name {
@@ -225,15 +227,55 @@
 }
 
 .llm-response.claude {
-  background-color: #f0f7ff;
+  background-color: var(--claude-color);
 }
 
 .llm-response.chatgpt {
-  background-color: #f0fff4;
+  background-color: var(--chatgpt-color);
 }
 
 .llm-response.llama {
-  background-color: #fff0e6;
+  background-color: var(--llama-color);
+}
+
+/* Message Container Hover States */
+.message:hover .llm-response {
+  opacity: 0.6;
+}
+
+.message:hover .llm-response:hover {
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.message:not(:hover) .llm-response {
+  opacity: 1;
+}
+
+/* Rephrase Highlight Styles */
+.rephrase-highlight {
+  transition: background-color 0.2s ease;
+  border-radius: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+/* Default state - no visible highlight */
+.rephrase-highlight {
+  background-color: transparent;
+}
+
+/* LLM-specific highlight colors when hovered */
+.rephrase-highlight.claude {
+  background-color: var(--claude-hover);
+}
+
+.rephrase-highlight.chatgpt {
+  background-color: var(--chatgpt-hover);
+}
+
+.rephrase-highlight.llama {
+  background-color: var(--llama-hover);
 }
 
 /* Message Input */
@@ -252,6 +294,7 @@
   resize: none;
   outline: none;
   font-family: inherit;
+  font-size: inherit;
 }
 
 .message-input textarea:focus {
@@ -269,134 +312,119 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--primary-color);
 }
 
 .send-button:hover {
   color: var(--primary-color);
+  opacity: 0.8;
 }
 
 /* Context Menu */
 .context-menu {
-  position: fixed;
   background: white;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   box-shadow: var(--shadow);
   z-index: 1000;
   min-width: 160px;
+  max-width: 280px;
+  padding: 4px;
 }
 
 .context-menu-item {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border: none;
   background: none;
   cursor: pointer;
   text-align: left;
+  gap: 8px;
+  border-radius: 2px;
+  color: var(--primary-color);
+}
+
+.context-menu-item.context-menu-subitem {
+  padding-left: 32px;
+  font-size: 0.95em;
 }
 
 .context-menu-item:hover {
   background: var(--hover-color);
 }
 
-/* Rephrase Highlight Styles */
-.rephrase-highlight {
-  transition: all 0.2s ease-in-out;
-  padding: 0 2px;
-  border-radius: 2px;
-  position: relative;
-  cursor: pointer;
+.context-menu-instructions {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
 }
 
-.rephrase-highlight.claude {
-  background-color: rgba(200, 227, 255, 0.3);
-}
-
-.rephrase-highlight.chatgpt {
-  background-color: rgba(198, 246, 213, 0.3);
-}
-
-.rephrase-highlight.llama {
-  background-color: rgba(255, 213, 179, 0.3);
-}
-
-.rephrase-highlight.modified {
-  background-color: transparent;
-  border-bottom: 1px dotted #ccc;
-}
-
-/* Tooltip Styles */
-.rephrase-tooltip {
-  position: fixed;
-  background: white;
+.context-menu-textarea {
+  width: 100%;
+  padding: 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 8px;
-  box-shadow: var(--shadow);
-  z-index: 1000;
-  max-width: 300px;
-  font-size: 14px;
+  resize: none;
+  height: 80px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  background-color: white;
+  font-family: inherit;
 }
 
-.rephrase-tooltip-option {
-  padding: 8px;
-  cursor: pointer;
-  border-radius: 4px;
-  margin: 4px 0;
+.context-menu-textarea:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.context-menu-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
-.rephrase-tooltip-option:hover {
-  background-color: var(--hover-color);
-}
-
-.rephrase-tooltip-option .llm-name {
+.context-menu-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
   font-weight: 500;
-  font-size: 12px;
-  color: #666;
+  transition: all 0.2s ease;
 }
 
-.rephrase-tooltip-option.claude {
-  border-left: 3px solid rgba(200, 227, 255, 0.9);
+.context-menu-button.cancel {
+  background: white;
+  border: 1px solid var(--border-color);
+  color: var(--primary-color);
 }
 
-.rephrase-tooltip-option.chatgpt {
-  border-left: 3px solid rgba(198, 246, 213, 0.9);
+.context-menu-button.cancel:hover {
+  background: var(--hover-color);
 }
 
-.rephrase-tooltip-option.llama {
-  border-left: 3px solid rgba(255, 213, 179, 0.9);
+.context-menu-button.send {
+  background: #1976d2;
+  color: white;
+  border: none;
 }
 
-/* Message Container Hover States */
-.message:hover .llm-response {
-  opacity: 0.6;
+.context-menu-button.send:hover {
+  background: #1565c0;
 }
 
-.message:hover .llm-response.claude:hover {
-  background-color: rgba(200, 227, 255, 0.9);
-  opacity: 1;
-  transform: translateX(4px);
+/* Loading Indicator */
+.loading-indicator {
+  margin-left: 4px;
+  animation: ellipsis 1.4s infinite;
 }
 
-.message:hover .llm-response.chatgpt:hover {
-  background-color: rgba(198, 246, 213, 0.9);
-  opacity: 1;
-  transform: translateX(4px);
-}
-
-.message:hover .llm-response.llama:hover {
-  background-color: rgba(255, 213, 179, 0.9);
-  opacity: 1;
-  transform: translateX(4px);
-}
-
-.message:not(:hover) .llm-response {
-  opacity: 1;
+@keyframes ellipsis {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
 }
 
 /* Print Styles */
@@ -427,11 +455,8 @@
     page-break-after: avoid;
   }
 
-  .page-content {
-    position: absolute;
-    top: var(--margin-size);
-    left: var(--margin-size);
-    right: var(--margin-size);
-    bottom: var(--margin-size);
+  .rephrase-highlight {
+    background-color: transparent !important;
+    padding: 0;
   }
 }

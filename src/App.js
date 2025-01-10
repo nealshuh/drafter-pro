@@ -16,6 +16,7 @@ import {
   Clipboard
 } from 'lucide-react';
 import { callClaudeAPI, callOpenAIAPI, callTogetherAPI } from './api';
+import ReactMarkdown from 'react-markdown';
 import './editor.css';
 
 const TextEditor = () => {
@@ -25,17 +26,49 @@ const TextEditor = () => {
   const [selectedLLMs, setSelectedLLMs] = useState(['claude', 'chatgpt']);
   const [pages, setPages] = useState([{ id: 1 }]);
   const [isLoading, setIsLoading] = useState({});
-  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
+  const [contextMenu, setContextMenu] = useState({ 
+    visible: false, 
+    x: 0, 
+    y: 0,
+    showInstructions: false,
+    instructions: ''
+  });
+  const [selectedText, setSelectedText] = useState('');
+  const [activeRephrase, setActiveRephrase] = useState({
+    spanId: null,
+    originalText: null,
+    range: null
+  });
+  const [pendingRephrase, setPendingRephrase] = useState(null);
+  const [storedSelection, setStoredSelection] = useState({
+    text: '',
+    range: null
+  });
+
   const pageRefsMap = useRef(new Map());
   const messagesEndRef = useRef(null);
-  const [rephraseRanges, setRephraseRanges] = useState(new Map());
-  const [hoveredMessage, setHoveredMessage] = useState(null);
 
   const llmOptions = [
     { id: 'claude', name: 'Claude', color: 'claude' },
     { id: 'chatgpt', name: 'ChatGPT', color: 'chatgpt' },
     { id: 'llama', name: 'Llama', color: 'llama' }
   ];
+
+  useEffect(() => {
+    if (pendingRephrase) {
+      const sendMessage = async () => {
+        const mockEvent = { 
+          preventDefault: () => {}, 
+          type: 'click',
+          key: 'Enter',
+          shiftKey: false
+        };
+        await handleSendMessage(mockEvent);
+        setPendingRephrase(null);
+      };
+      sendMessage();
+    }
+  }, [pendingRephrase]);
 
   // Create refs for new pages
   const getOrCreateRef = (pageId) => {
@@ -55,7 +88,16 @@ const TextEditor = () => {
     }
   }, [pages]);
 
-  const [selectedText, setSelectedText] = useState('');
+  // Cleanup rephrase span on unmount
+  useEffect(() => {
+    return () => {
+      const span = document.querySelector('.rephrase-highlight');
+      if (span) {
+        const text = span.textContent;
+        span.replaceWith(text);
+      }
+    };
+  }, []);
 
   const getDocumentContent = () => {
     let fullContent = '';
@@ -78,22 +120,15 @@ const TextEditor = () => {
       const text = currentPage.innerText;
       const overflowPoint = findOverflowPoint(text, currentPage);
       
-      // Split content
       const firstPageContent = text.slice(0, overflowPoint);
       const remainingContent = text.slice(overflowPoint);
 
-      // Update current page
       currentPage.innerText = firstPageContent;
 
       if (pageIndex === pages.length - 1) {
-        // Add new page
         const newPageId = Date.now();
-        setPages(prevPages => [
-          ...prevPages,
-          { id: newPageId }
-        ]);
+        setPages(prevPages => [...prevPages, { id: newPageId }]);
         
-        // Wait for the new page to be rendered
         await new Promise(resolve => setTimeout(resolve, 0));
         
         const newPage = pageRefsMap.current.get(newPageId)?.current;
@@ -101,12 +136,10 @@ const TextEditor = () => {
           newPage.innerText = remainingContent;
         }
       } else {
-        // Add to next page
         const nextPageId = pages[pageIndex + 1].id;
         const nextPage = pageRefsMap.current.get(nextPageId)?.current;
         if (nextPage) {
           nextPage.innerText = remainingContent + (nextPage.innerText || '');
-          // Check if next page needs to overflow
           setTimeout(() => {
             if (nextPage.scrollHeight > nextPage.clientHeight) {
               handleInput(pageIndex + 1, event);
@@ -116,7 +149,6 @@ const TextEditor = () => {
       }
     }
 
-    // Check if current page is underfilled and there's a next page
     if (currentPage.scrollHeight < currentPage.clientHeight && pageIndex < pages.length - 1) {
       const nextPageId = pages[pageIndex + 1].id;
       const nextPage = pageRefsMap.current.get(nextPageId)?.current;
@@ -129,7 +161,6 @@ const TextEditor = () => {
           currentPage.innerText += contentToMove;
           nextPage.innerText = nextPage.innerText.slice(contentToMove.length);
 
-          // Remove empty pages
           if (!nextPage.innerText.trim()) {
             setPages(prevPages => prevPages.filter((_, i) => i !== pageIndex + 1));
           }
@@ -157,7 +188,6 @@ const TextEditor = () => {
     
     element.innerText = originalContent;
     
-    // Find word boundary
     let point = start;
     while (point > 0 && !/\s/.test(text[point - 1])) {
       point--;
@@ -182,16 +212,32 @@ const TextEditor = () => {
       }
     }
     
-    // Restore original content
     element.innerText = originalContent;
     
-    // Find word boundary
     let point = start;
     while (point > 0 && !/\s/.test(text[point - 1])) {
       point--;
     }
     
     return text.slice(0, point || start);
+  };
+
+  const wrapSelectionWithSpan = (selection) => {
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const spanId = Date.now().toString();
+    const span = document.createElement('span');
+    span.className = 'rephrase-highlight';
+    span.dataset.rephraseId = spanId;
+    
+    range.surroundContents(span);
+    
+    return {
+      spanId,
+      originalText: span.textContent,
+      range: range.cloneRange()
+    };
   };
 
   const executeCommand = (command) => {
@@ -209,94 +255,116 @@ const TextEditor = () => {
   const handleContextMenu = (event) => {
     event.preventDefault();
     
-    // Get the current selection before showing the context menu
     const selection = window.getSelection();
     const text = selection.toString();
     setSelectedText(text);
-    
-    // Store the selection range for later use
-    const range = selection.getRangeAt(0);
     
     setContextMenu({
       visible: true,
       x: event.clientX,
       y: event.clientY,
       hasSelection: text.length > 0,
-      range: range
+      showInstructions: false,
+      instructions: ''
     });
   };
 
   const handleContextMenuAction = async (action) => {
-    if (contextMenu.range && (action === 'copy' || action === 'cut' || action === 'rephrase')) {
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(contextMenu.range);
+    console.log('handleContextMenuAction called with action:', action);
+    
+    let selection = window.getSelection();
+    let selectedText = selection.toString();
+    
+    // If this is a rephrase-with-instructions and we have stored selection, use it
+    if (action === 'rephrase-with-instructions' && storedSelection.text) {
+      selectedText = storedSelection.text;
+      if (storedSelection.range) {
+        selection.removeAllRanges();
+        selection.addRange(storedSelection.range);
+      }
     }
-  
+    
+    // Store instructions and log them
+    const instructions = contextMenu.instructions;
+    console.log('Current instructions:', instructions);
+    
+    // Check if the selected text is system markup
+    const isSystemMarkup = selectedText.includes('<userStyle>') || 
+                          selectedText.includes('</userStyle>') ||
+                          selectedText.trim() === '';
+    
     switch (action) {
-      case 'copy':
-        document.execCommand('copy');
-        break;
-      case 'cut':
-        document.execCommand('cut');
-        break;
-      case 'paste':
-        document.execCommand('paste');
-        break;
+      // ... other cases ...
+      
       case 'rephrase':
-        if (selectedText) {
-          setIsLLMPanelOpen(true);  
-          const prompt = `Rephrase this sentence to make it better given the context of the document:\n\n${selectedText}\nRespond with just the sentence in the exact format with all correct syntax, grammar and punctuation`;
-          setCurrentMessage(prompt);
-          
-          // Generate a message ID now so we can use it for both the message and range
-          const messageId = Date.now();
-          
-          // Store the range with the message ID
-          const newRange = contextMenu.range.cloneRange(); // Clone the range
-          
-          console.log('Storing range for message:', messageId);
-          console.log('Range details:', {
-            startOffset: newRange.startOffset,
-            endOffset: newRange.endOffset,
-            selectedText: selectedText,
-            rangeContent: newRange.toString()
-          });
-          
-          setRephraseRanges(prev => {
-            const updatedRanges = new Map(prev).set(messageId, {
-              range: newRange,
-              originalText: selectedText
-            });
-            console.log('Updated rephraseRanges:', Object.fromEntries(updatedRanges));
-            return updatedRanges;
-          });
-          
-          // Trigger send message with the same ID
-          const event = { preventDefault: () => {}, type: 'click' };
-          handleSendMessage(event, messageId);
+      case 'rephrase-with-instructions': {
+        console.log('Starting rephrase process:', action);
+        console.log('Selected text:', selectedText);
+        
+        // Always open panel first
+        setIsLLMPanelOpen(true);
+        
+        if (selectedText && !isSystemMarkup) {
+          try {
+            // Clear any existing rephrase
+            if (activeRephrase.spanId) {
+              const existingSpan = document.querySelector('.rephrase-highlight');
+              if (existingSpan) {
+                existingSpan.replaceWith(existingSpan.textContent);
+              }
+              setActiveRephrase({ spanId: null, originalText: null, range: null });
+            }
+            
+            // Create new rephrase span
+            const rephraseInfo = wrapSelectionWithSpan(selection);
+            console.log('Rephrase info created:', rephraseInfo);
+            
+            if (rephraseInfo) {
+              // Set active rephrase first
+              setActiveRephrase(rephraseInfo);
+              
+              // Create prompt
+              let prompt;
+              if (action === 'rephrase-with-instructions') {
+                console.log('Creating prompt with instructions:', instructions);
+                prompt = `Rephrase this text: ${rephraseInfo.originalText}. Here are some additional instructions: ${instructions}. Return the exact rephrased sentence only with correct punctuation and grammar.`;
+                console.log('Created with-instructions prompt:', prompt);
+              } else {
+                prompt = `Rephrase this text: ${rephraseInfo.originalText}. Return the exact rephrased sentence only with correct punctuation and grammar.`;
+                console.log('Created regular prompt:', prompt);
+              }
+              
+              console.log('Setting current message:', prompt);
+              setCurrentMessage(prompt);
+              
+              console.log('Setting pending rephrase for auto-send');
+              setPendingRephrase(prompt);
+            }
+          } catch (error) {
+            console.error('Error in rephrase:', error);
+          }
+        } else {
+          console.log('Invalid selection or system markup detected:', selectedText);
         }
         break;
-      default:
-        break;
+      }
     }
-    setContextMenu({ visible: false, x: 0, y: 0 });
+    
+    // Clear context menu and selection at the end
+    setContextMenu({ visible: false, x: 0, y: 0, showInstructions: false, instructions: '' });
     setSelectedText('');
+    // Also clear stored selection
+    setStoredSelection({ text: '', range: null });
   };
 
-  const handleSendMessage = async (e, providedMessageId = null) => {
+  const handleSendMessage = async (e) => {
     if ((e.key === 'Enter' && !e.shiftKey) || e.type === 'click') {
       e.preventDefault();
       if (currentMessage.trim()) {
-        const messageId = providedMessageId || Date.now();
+        const messageId = Date.now();
         
-        console.log('Sending message with ID:', messageId);
-        console.log('Current rephraseRanges:', Object.fromEntries(rephraseRanges));
-        
-        // Get document content
         const documentContent = getDocumentContent();
         
-        // Create the message object that will be displayed
         const newMessage = {
           id: messageId,
           text: currentMessage,
@@ -306,17 +374,13 @@ const TextEditor = () => {
           }), {}),
           timestamp: new Date().toISOString()
         };
-  
-        console.log('Created new message:', newMessage);
     
         setMessages(prev => [...prev, newMessage]);
         setCurrentMessage('');
         scrollToBottom();
     
-        // Prepare the full message with context
         const messageWithContext = `Context: ${documentContent}\n\n${currentMessage}`;
     
-        // Make API calls for each selected LLM
         selectedLLMs.forEach(async (llm) => {
           setIsLoading(prev => ({ ...prev, [messageId]: true }));
           
@@ -327,17 +391,15 @@ const TextEditor = () => {
                 response = await callClaudeAPI(messageWithContext);
                 break;
               case 'chatgpt':
-                response = await callOpenAIAPI(messageWithContext, 'gpt-4o-mini');
+                response = await callOpenAIAPI(messageWithContext, 'gpt-4');
                 break;
               case 'llama':
-                response = await callTogetherAPI(messageWithContext, 'meta-llama/Llama-3-70b-chat-hf');
+                response = await callTogetherAPI(messageWithContext, 'meta-llama/Llama-2-70b-chat-hf');
                 break;
               default:
                 response = 'Model not supported';
             }
     
-            console.log(`Response from ${llm} for message ${messageId}:`, response);
-            
             setMessages(prev => prev.map(msg => {
               if (msg.id === messageId) {
                 return {
@@ -351,8 +413,7 @@ const TextEditor = () => {
               return msg;
             }));
           } catch (error) {
-            console.error(`Error from ${llm} for message ${messageId}:`, error);
-            
+            console.error(`Error from ${llm}:`, error);
             setMessages(prev => prev.map(msg => {
               if (msg.id === messageId) {
                 return {
@@ -377,37 +438,71 @@ const TextEditor = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Handle context menu updates
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (contextMenu.visible) {
-        setContextMenu({ visible: false, x: 0, y: 0 });
-      }
-    };
-
-    const handleSelectionChange = () => {
-      if (contextMenu.visible) {
-        const selection = window.getSelection();
-        const hasSelection = selection.toString().length > 0;
-        setContextMenu(prev => ({
-          ...prev,
-          hasSelection
-        }));
-      }
-    };
-
-    document.addEventListener('click', handleClickOutside);
-    document.addEventListener('selectionchange', handleSelectionChange);
+  const MessageComponent = ({ message, llmId, response }) => {
+    const isRephrase = message.text.startsWith('Rephrase this text:');
     
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-      document.removeEventListener('selectionchange', handleSelectionChange);
+    const handleMouseEnter = () => {
+      if (isRephrase) {
+        const span = document.querySelector('.rephrase-highlight');
+        if (span && span.dataset.rephraseId === activeRephrase.spanId) {
+          if (!span.dataset.currentText) {
+            span.dataset.currentText = span.textContent;
+          }
+          span.textContent = response;
+          span.classList.add(llmId);
+        }
+      }
     };
-  }, [contextMenu.visible]);
+    
+    const handleMouseLeave = () => {
+      if (isRephrase) {
+        const span = document.querySelector('.rephrase-highlight');
+        if (span && span.dataset.rephraseId === activeRephrase.spanId) {
+          span.textContent = span.dataset.currentText;
+          span.classList.remove(llmId);
+          delete span.dataset.currentText;
+        }
+      }
+    };
+  
+    const handleClick = () => {
+      if (isRephrase) {
+        const span = document.querySelector('.rephrase-highlight');
+        if (span && span.dataset.rephraseId === activeRephrase.spanId) {
+          span.textContent = response;
+          span.classList.remove('claude', 'chatgpt', 'llama');
+          span.classList.add(llmId);
+          span.dataset.currentText = response;
+          
+          setActiveRephrase(prev => ({
+            ...prev,
+            originalText: response
+          }));
+        }
+      }
+    };
+  
+    return (
+      <div 
+        className={`llm-response ${llmId} ${isRephrase ? 'clickable' : ''}`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onClick={handleClick}
+      >
+        <p className="llm-name">{llmOptions.find(l => l.id === llmId).name}</p>
+        {isRephrase ? (
+          <p>{response}</p>
+        ) : (
+          <div className="markdown-content">
+            <ReactMarkdown>{response}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="editor-container">
-      {/* Toolbar */}
       <div className="toolbar">
         <div className="toolbar-buttons">
           <button className="toolbar-button" onClick={() => executeCommand('bold')}>
@@ -441,9 +536,7 @@ const TextEditor = () => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="content-area">
-        {/* Document Area */}
         <div className={`document-area ${isLLMPanelOpen ? 'split' : 'full'}`}>
           {pages.map((page, index) => (
             <div 
@@ -465,7 +558,6 @@ const TextEditor = () => {
           ))}
         </div>
 
-        {/* Chat Panel */}
         {isLLMPanelOpen && (
           <div className="chat-panel">
             <div className="llm-selector">
@@ -495,15 +587,13 @@ const TextEditor = () => {
                   </div>
                   {Object.entries(message.responses).map(([llmId, response]) => {
                     if (!selectedLLMs.includes(llmId)) return null;
-                    const llm = llmOptions.find(opt => opt.id === llmId);
                     return (
-                      <div key={llmId} className={`llm-response ${llm.color}`}>
-                        <p className="llm-name">
-                          {llm.name}
-                          {isLoading[message.id] && <span className="loading-indicator">...</span>}
-                        </p>
-                        <p>{response}</p>
-                      </div>
+                      <MessageComponent
+                        key={llmId}
+                        message={message}
+                        llmId={llmId}
+                        response={response}
+                      />
                     );
                   })}
                 </div>
@@ -529,21 +619,13 @@ const TextEditor = () => {
           </div>
         )}
 
-        {/* Context Menu */}
         {contextMenu.visible && (
           <div 
             className="context-menu"
             style={{ 
               position: 'fixed',
               top: contextMenu.y,
-              left: contextMenu.x,
-              zIndex: 1000,
-              backgroundColor: 'white',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-              padding: '4px 0',
-              minWidth: '150px'
+              left: contextMenu.x
             }}
             onContextMenu={(e) => e.preventDefault()}
           >
@@ -570,12 +652,76 @@ const TextEditor = () => {
               <Clipboard size={16} className="mr-2" /> Paste
             </button>
             {selectedText && (
-              <button
-                className="context-menu-item"
-                onClick={() => handleContextMenuAction('rephrase')}
-              >
-                <MessageSquare size={16} className="mr-2" /> Rephrase
-              </button>
+              <>
+                <button
+                  className="context-menu-item"
+                  onClick={() => handleContextMenuAction('rephrase')}
+                >
+                  <MessageSquare size={16} className="mr-2" /> Rephrase
+                </button>
+                <button
+                  className="context-menu-item context-menu-subitem"
+                  onClick={() => {
+                    console.log('Opening instructions input');
+                    const selection = window.getSelection();
+                    const range = selection.getRangeAt(0);
+                    
+                    // Store the selection
+                    setStoredSelection({
+                      text: selection.toString(),
+                      range: range.cloneRange()
+                    });
+                    
+                    setContextMenu(prev => ({
+                      ...prev,
+                      showInstructions: true,
+                      visible: true,
+                      instructions: prev.instructions || ''
+                    }));
+                  }}
+                >
+                  <MessageSquare size={16} className="mr-2" /> Rephrase with instructions
+                </button>
+
+              </>
+            )}
+            {contextMenu.showInstructions && (
+              <div className="context-menu-instructions">
+                <textarea
+                  value={contextMenu.instructions}
+                  onChange={(e) => {
+                    console.log('Instructions updated:', e.target.value);
+                    setContextMenu(prev => ({
+                      ...prev,
+                      instructions: e.target.value
+                    }));
+                  }}
+                  placeholder="Enter additional instructions..."
+                  rows={3}
+                  className="context-menu-textarea"
+                  autoFocus
+                />
+                <div className="context-menu-buttons">
+                  <button 
+                    className="context-menu-button cancel"
+                    onClick={() => {
+                      console.log('Cancel clicked');
+                      setContextMenu({ visible: false, x: 0, y: 0, showInstructions: false, instructions: '' });
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    className="context-menu-button send"
+                    onClick={() => {
+                      console.log('Send clicked with instructions:', contextMenu.instructions);
+                      handleContextMenuAction('rephrase-with-instructions');
+                    }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
