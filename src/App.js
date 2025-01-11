@@ -13,9 +13,11 @@ import {
   Check,
   Copy,
   Scissors,
-  Clipboard
+  Clipboard,
+  Save
 } from 'lucide-react';
-import { callClaudeAPI, callOpenAIAPI, callTogetherAPI } from './api';
+import { callClaudeAPI, callOpenAIAPI, callTogetherAPI } from './api/api';
+import { saveDocument, loadDocument } from './api/supabase';
 import ReactMarkdown from 'react-markdown';
 import './editor.css';
 
@@ -26,6 +28,7 @@ const TextEditor = () => {
   const [selectedLLMs, setSelectedLLMs] = useState(['claude', 'chatgpt']);
   const [pages, setPages] = useState([{ id: 1 }]);
   const [isLoading, setIsLoading] = useState({});
+  const [saveStatus, setSaveStatus] = useState('idle'); // New state for save indicator
   const [contextMenu, setContextMenu] = useState({ 
     visible: false, 
     x: 0, 
@@ -54,6 +57,24 @@ const TextEditor = () => {
     { id: 'llama', name: 'Llama', color: 'llama' }
   ];
 
+  // Load document content on mount
+  useEffect(() => {
+    const loadContent = async () => {
+      try {
+        const content = await loadDocument();
+        const firstPageRef = pageRefsMap.current.get(pages[0].id)?.current;
+        if (firstPageRef && content) {
+          firstPageRef.innerText = content;
+          handleInput(0, {});
+        }
+      } catch (error) {
+        console.error('Error loading document:', error);
+      }
+    };
+    
+    loadContent();
+  }, []);
+
   useEffect(() => {
     if (pendingRephrase) {
       const sendMessage = async () => {
@@ -70,7 +91,6 @@ const TextEditor = () => {
     }
   }, [pendingRephrase]);
 
-  // Create refs for new pages
   const getOrCreateRef = (pageId) => {
     if (!pageRefsMap.current.has(pageId)) {
       pageRefsMap.current.set(pageId, React.createRef());
@@ -78,7 +98,6 @@ const TextEditor = () => {
     return pageRefsMap.current.get(pageId);
   };
 
-  // Cleanup unused refs
   useEffect(() => {
     const currentPageIds = new Set(pages.map(page => page.id));
     for (const [pageId] of pageRefsMap.current) {
@@ -88,7 +107,6 @@ const TextEditor = () => {
     }
   }, [pages]);
 
-  // Cleanup rephrase span on unmount
   useEffect(() => {
     return () => {
       const span = document.querySelector('.rephrase-highlight');
@@ -108,6 +126,25 @@ const TextEditor = () => {
       }
     });
     return fullContent.trim();
+  };
+
+  const handleSave = async () => {
+    try {
+      const content = getDocumentContent();
+      await saveDocument(content);
+      
+      // Set status to success
+      setSaveStatus('success');
+      
+      // Reset back to save icon after 2 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error saving document:', error);
+      setSaveStatus('idle');
+    }
   };
 
   const handleInput = async (pageIndex, event) => {
@@ -275,7 +312,6 @@ const TextEditor = () => {
     let selection = window.getSelection();
     let selectedText = selection.toString();
     
-    // If this is a rephrase-with-instructions and we have stored selection, use it
     if (action === 'rephrase-with-instructions' && storedSelection.text) {
       selectedText = storedSelection.text;
       if (storedSelection.range) {
@@ -284,29 +320,23 @@ const TextEditor = () => {
       }
     }
     
-    // Store instructions and log them
     const instructions = contextMenu.instructions;
     console.log('Current instructions:', instructions);
     
-    // Check if the selected text is system markup
     const isSystemMarkup = selectedText.includes('<userStyle>') || 
                           selectedText.includes('</userStyle>') ||
                           selectedText.trim() === '';
     
     switch (action) {
-      // ... other cases ...
-      
       case 'rephrase':
       case 'rephrase-with-instructions': {
         console.log('Starting rephrase process:', action);
         console.log('Selected text:', selectedText);
         
-        // Always open panel first
         setIsLLMPanelOpen(true);
         
         if (selectedText && !isSystemMarkup) {
           try {
-            // Clear any existing rephrase
             if (activeRephrase.spanId) {
               const existingSpan = document.querySelector('.rephrase-highlight');
               if (existingSpan) {
@@ -315,15 +345,12 @@ const TextEditor = () => {
               setActiveRephrase({ spanId: null, originalText: null, range: null });
             }
             
-            // Create new rephrase span
             const rephraseInfo = wrapSelectionWithSpan(selection);
             console.log('Rephrase info created:', rephraseInfo);
             
             if (rephraseInfo) {
-              // Set active rephrase first
               setActiveRephrase(rephraseInfo);
               
-              // Create prompt
               let prompt;
               if (action === 'rephrase-with-instructions') {
                 console.log('Creating prompt with instructions:', instructions);
@@ -348,12 +375,22 @@ const TextEditor = () => {
         }
         break;
       }
+
+      case 'copy':
+        document.execCommand('copy');
+        break;
+
+      case 'cut':
+        document.execCommand('cut');
+        break;
+
+      case 'paste':
+        document.execCommand('paste');
+        break;
     }
     
-    // Clear context menu and selection at the end
     setContextMenu({ visible: false, x: 0, y: 0, showInstructions: false, instructions: '' });
     setSelectedText('');
-    // Also clear stored selection
     setStoredSelection({ text: '', range: null });
   };
 
@@ -440,15 +477,6 @@ const TextEditor = () => {
 
   const MessageComponent = ({ message, llmId, response }) => {
     const isRephrase = message.text.startsWith('Rephrase this text:');
-    const testResponse = `
-      # Test Heading
-      - Bullet point 1
-      - Bullet point 2
-
-      \`\`\`javascript
-      console.log("Hello world");
-      \`\`\`
-        `;
     
     const handleMouseEnter = () => {
       if (isRephrase) {
@@ -534,6 +562,17 @@ const TextEditor = () => {
           </button>
           <button className="toolbar-button" onClick={() => executeCommand('justifyRight')}>
             <AlignRight size={16} />
+          </button>
+          <button 
+            className="toolbar-button"
+            onClick={handleSave}
+            aria-label={saveStatus === 'success' ? 'Saved' : 'Save'}
+          >
+            {saveStatus === 'success' ? (
+              <Check size={16} className="text-green-500" />
+            ) : (
+              <Save size={16} />
+            )}
           </button>
         </div>
         <button 
@@ -675,7 +714,6 @@ const TextEditor = () => {
                     const selection = window.getSelection();
                     const range = selection.getRangeAt(0);
                     
-                    // Store the selection
                     setStoredSelection({
                       text: selection.toString(),
                       range: range.cloneRange()
@@ -691,7 +729,6 @@ const TextEditor = () => {
                 >
                   <MessageSquare size={16} className="mr-2" /> Rephrase with instructions
                 </button>
-
               </>
             )}
             {contextMenu.showInstructions && (
