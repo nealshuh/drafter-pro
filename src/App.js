@@ -440,6 +440,15 @@ const TextEditor = () => {
 
   const MessageComponent = ({ message, llmId, response }) => {
     const isRephrase = message.text.startsWith('Rephrase this text:');
+    const testResponse = `
+      # Test Heading
+      - Bullet point 1
+      - Bullet point 2
+
+      \`\`\`javascript
+      console.log("Hello world");
+      \`\`\`
+        `;
     
     const handleMouseEnter = () => {
       if (isRephrase) {
