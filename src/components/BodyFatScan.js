@@ -1,274 +1,407 @@
 import React, { useState, useCallback } from 'react';
-import styled from 'styled-components';
 import { Loader, Upload } from 'lucide-react';
+import '../styles/scanner.css';
 
-const Container = styled.div`
-  max-width: 600px;
-  margin: 2rem auto;
-  padding: 2rem;
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-`;
+const metricRanges = {
+  bodyFat: {
+    ranges: {
+      male: [
+        { max: 5, level: 'Dangerously Low', color: '#ff4444', description: 'Essential fat only. This level is dangerously low and can lead to health problems.' },
+        { max: 8, level: 'Very Lean', color: '#ffa726', description: 'Athletic level, commonly seen in elite athletes. Difficult to maintain.' },
+        { max: 15, level: 'Fit', color: '#66bb6a', description: 'Optimal health range. Good muscle definition and athletic appearance.' },
+        { max: 20, level: 'Acceptable', color: '#ffa726', description: 'Average range. Room for improvement but generally healthy.' },
+        { max: 25, level: 'High', color: '#ff7043', description: 'Above average body fat. Consider lifestyle changes for better health.' },
+        { max: 100, level: 'Very High', color: '#ff4444', description: 'Significantly elevated body fat. Health risks increased.' }
+      ],
+      female: [
+        { max: 13, level: 'Dangerously Low', color: '#ff4444', description: 'Essential fat only. This level is dangerously low and can lead to health problems.' },
+        { max: 16, level: 'Very Lean', color: '#ffa726', description: 'Athletic level, commonly seen in elite athletes. Difficult to maintain.' },
+        { max: 23, level: 'Fit', color: '#66bb6a', description: 'Optimal health range. Good muscle definition and athletic appearance.' },
+        { max: 28, level: 'Acceptable', color: '#ffa726', description: 'Average range. Room for improvement but generally healthy.' },
+        { max: 33, level: 'High', color: '#ff7043', description: 'Above average body fat. Consider lifestyle changes for better health.' },
+        { max: 100, level: 'Very High', color: '#ff4444', description: 'Significantly elevated body fat. Health risks increased.' }
+      ]
+    },
+    scale: [0, 10, 20, 30, 40, 50]
+  },
+  bmi: {
+    ranges: [
+      { max: 18.5, level: 'Underweight', color: '#ff4444', description: 'BMI below healthy range. May indicate insufficient body mass.' },
+      { max: 24.9, level: 'Normal', color: '#66bb6a', description: 'Healthy BMI range. Associated with optimal health outcomes.' },
+      { max: 29.9, level: 'Overweight', color: '#ffa726', description: 'Elevated BMI. May increase risk of health issues.' },
+      { max: 100, level: 'Obese', color: '#ff4444', description: 'Significantly elevated BMI. Associated with increased health risks.' }
+    ],
+    scale: [15, 20, 25, 30, 35, 40]
+  },
+  leanMassIndex: {
+    ranges: [
+      { max: 16, level: 'Low', color: '#ff4444', description: 'Low muscle mass. Consider resistance training and protein intake.' },
+      { max: 19, level: 'Moderate', color: '#ffa726', description: 'Average muscle mass. Good foundation for further improvement.' },
+      { max: 22, level: 'Good', color: '#66bb6a', description: 'Above average muscle mass. Indicates regular strength training.' },
+      { max: 25, level: 'Excellent', color: '#43a047', description: 'High muscle mass. Typical of strength athletes.' },
+      { max: 100, level: 'Very High', color: '#ffa726', description: 'Extremely high muscle mass. Common in professional bodybuilders.' }
+    ],
+    scale: [14, 17, 20, 23, 26, 29]
+  }
+};
 
-const Title = styled.h1`
-  color: #333;
-  text-align: center;
-  margin-bottom: 2rem;
-  font-size: 24px;
-`;
-
-const UploadContainer = styled.div`
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-`;
-
-const UploadArea = styled.label`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 200px;
-  border: 2px dashed #666;
-  border-radius: 8px;
-  padding: 2rem;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  background-color: #ffffff;
+const MetricScale = ({ value, type, gender }) => {
+  const ranges = type === 'bodyFat' ? metricRanges[type].ranges[gender] : metricRanges[type].ranges;
+  const scale = metricRanges[type].scale;
   
-  &:hover {
-    border-color: #333;
-    background-color: #f8f8f8;
-  }
-`;
+  const getCurrentRange = (value, ranges) => {
+    const range = ranges.find(range => value <= range.max);
+    return range || ranges[ranges.length - 1];
+  };
 
-const UploadIcon = styled(Upload)`
-  margin-bottom: 1rem;
-  color: #666;
-`;
+  const currentRange = getCurrentRange(value, ranges);
 
-const UploadText = styled.p`
-  margin: 0;
-  color: #333;
-  font-size: 16px;
-`;
-
-const UploadSubText = styled.p`
-  margin: 8px 0 0 0;
-  color: #666;
-  font-size: 12px;
-`;
-
-const ImagePreview = styled.div`
-  position: relative;
-  max-width: 400px;
-  margin: 2rem auto;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-`;
-
-const PreviewImage = styled.img`
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 8px;
-  ${props => props.isScanning && `
-    filter: grayscale(50%) brightness(120%);
-    animation: scan 2s infinite linear;
-  `}
-
-  @keyframes scan {
-    0% {
-      filter: grayscale(50%) brightness(120%);
+  // New smooth gradient calculation
+  const calculateGradient = () => {
+    if (type === 'bmi') {
+      // BMI specific gradient (red -> green -> orange -> red)
+      return `linear-gradient(to right, 
+        #ff4444 0%,
+        #ff4444 15%,
+        #66bb6a 22%,
+        #66bb6a 27%,
+        #ffa726 32%,
+        #ff4444 40%
+      )`;
+    } else if (type === 'bodyFat') {
+      // Body fat specific gradient
+      return `linear-gradient(to right, 
+        #ff4444 0%,
+        #ffa726 15%,
+        #66bb6a 25%,
+        #66bb6a 35%,
+        #ffa726 45%,
+        #ff4444 55%
+      )`;
+    } else {
+      // Lean mass index gradient
+      return `linear-gradient(to right, 
+        #ff4444 0%,
+        #ffa726 20%,
+        #66bb6a 40%,
+        #43a047 60%,
+        #ffa726 80%
+      )`;
     }
-    50% {
-      filter: grayscale(0%) brightness(100%);
-    }
-    100% {
-      filter: grayscale(50%) brightness(120%);
-    }
-  }
-`;
+  };
 
-const ScanLine = styled.div`
-  display: ${props => props.isScanning ? 'block' : 'none'};
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(to right, transparent, #00ff00, transparent);
-  animation: scanLine 2s infinite linear;
+  const calculatePosition = (value, scale) => {
+    // Find which segment the value falls into
+    let leftIndex = 0;
+    for (let i = 0; i < scale.length - 1; i++) {
+      if (value >= scale[i] && value <= scale[i + 1]) {
+        leftIndex = i;
+        break;
+      } else if (value < scale[0]) {
+        // Before first mark
+        return 0;
+      } else if (value > scale[scale.length - 1]) {
+        // After last mark
+        return 100;
+      }
+    }
   
-  @keyframes scanLine {
-    0% {
-      top: 0;
-    }
-    100% {
-      top: 100%;
-    }
-  }
-`;
+    // Calculate percentage within the segment
+    const leftMark = scale[leftIndex];
+    const rightMark = scale[leftIndex + 1];
+    const segmentWidth = 100 / (scale.length - 1); // Width of each segment in percentage
+    
+    // Calculate position within the segment
+    const segmentPosition = ((value - leftMark) / (rightMark - leftMark)) * segmentWidth;
+    const basePosition = leftIndex * segmentWidth;
+    
+    return basePosition + segmentPosition;
+  };
 
-const Result = styled.div`
-  text-align: center;
-  margin-top: 2rem;
-  padding: 1rem;
-  background-color: #f8f8f8;
-  border-radius: 8px;
-  font-size: 18px;
-  color: #333;
-`;
+  return (
+    <div className="MetricScaleContainer">
+      <div className="ScaleBar">
+        {scale.map((mark, index) => (
+          <div key={index} className="ScaleMark">
+            <div className="ScaleValue">{mark}</div>
+          </div>
+        ))}
+      </div>
+      <div 
+        className="ColorBar"
+        style={{ 
+          background: calculateGradient()
+        }}
+      />
+      <div 
+        className="Indicator" 
+        style={{ 
+          left: `${calculatePosition(value, scale)}%` 
+        }}
+      />
+      <div className="MetricInfo">
+        <div className="MetricLevel" style={{ color: currentRange.color }}>
+          {currentRange.level}
+        </div>
+        <div className="MetricDescription">{currentRange.description}</div>
+      </div>
+    </div>
+  );
+};
 
-const LoadingSpinner = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: 2rem 0;
-  
-  svg {
-    animation: rotate 2s linear infinite;
-  }
-  
-  @keyframes rotate {
-    100% {
-      transform: rotate(360deg);
-    }
-  }
-`;
-
-const ErrorMessage = styled.div`
-  color: #ff4444;
-  text-align: center;
-  margin-top: 1rem;
-`;
-
-const BodyFatScanner = () => {
+const BodyMetricsScanner = () => {
+  const [formData, setFormData] = useState({
+    height: '',
+    weight: '',
+    age: '',
+    gender: ''
+  });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [result, setResult] = useState(null);
+  const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+
+  const validateForm = () => {
+    const errors = {};
+    if (!formData.height) errors.height = 'Height is required';
+    if (!formData.weight) errors.weight = 'Weight is required';
+    if (!formData.age) errors.age = 'Age is required';
+    if (!formData.gender) errors.gender = 'Gender is required';
+    if (!image) errors.image = 'Image is required';
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const calculateBMI = () => {
+    const heightInMeters = (formData.height * 0.0254);  // Convert inches to meters (1 inch = 0.0254 meters)
+    const weightInKg = formData.weight * 0.453592;      // Convert lbs to kg (1 lb = 0.453592 kg)
+    return (weightInKg / (heightInMeters * heightInMeters)).toFixed(1);
+};
+
+const calculateLeanMassIndex = (bodyFatPercentage) => {
+  const weightInKg = formData.weight * 0.453592;      // Convert lbs to kg
+  const fatMass = (weightInKg * bodyFatPercentage) / 100;
+  const leanMass = weightInKg - fatMass;
+  const heightInMeters = formData.height * 0.0254;    // Convert inches to meters
+  return (leanMass / (heightInMeters * heightInMeters)).toFixed(1);
+};
 
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files[0];
     if (file) {
       setImage(file);
       setPreview(URL.createObjectURL(file));
-      analyzePicture(file);
     }
   }, []);
 
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result.split(',')[1];
-        resolve(base64String);
-      };
+      reader.onload = () => resolve(reader.result.split(',')[1]);
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
   };
 
-  const analyzePicture = async (file) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+    
     setIsScanning(true);
     setError(null);
-    setResult(null);
+    setResults(null);
 
     try {
-      const base64Image = await convertToBase64(file);
-
+      const base64Image = await convertToBase64(image);
       const response = await fetch('https://lpgadqrtfstdmnycppkx.supabase.co/functions/v1/callBodyFatAssess', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwZ2FkcXJ0ZnN0ZG1ueWNwcGt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4ODI1ODcsImV4cCI6MjA1MTQ1ODU4N30.wwbgQN_zGHvUxRRc01m2j0bIHCSi7qoDc4T2d-MLfV4`,
-          'Accept': 'application/json'
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwZ2FkcXJ0ZnN0ZG1ueWNwcGt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4ODI1ODcsImV4cCI6MjA1MTQ1ODU4N30.wwbgQN_zGHvUxRRc01m2j0bIHCSi7qoDc4T2d-MLfV4',
         },
         body: JSON.stringify({
-          image: base64Image
+          image: base64Image,
+          metrics: {
+            height: parseFloat(formData.height),
+            weight: parseFloat(formData.weight),
+            age: parseInt(formData.age),
+            gender: formData.gender
+          }
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to analyze image');
+        throw new Error('Failed to analyze image');
       }
 
       const data = await response.json();
-      const percentage = extractPercentage(data.message);
+      const bodyFatPercentage = parseFloat(data.bodyFatPercentage);
       
-      // Simulate a delay for the scanning effect
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      setResult(percentage);
-      console.log(data.message)
+      setResults({
+        bodyFatPercentage,
+        bmi: calculateBMI(),
+        leanMassIndex: calculateLeanMassIndex(bodyFatPercentage)
+      });
     } catch (err) {
-      console.error('Error details:', err);
       setError(err.message || 'Failed to analyze image. Please try again.');
     } finally {
       setIsScanning(false);
     }
   };
 
-  const extractPercentage = (content) => {
-    // Extract the first number from the response
-    const match = content.match(/\d+(\.\d+)?/);
-    return match ? parseFloat(match[0]) : null;
-  };
-
   return (
-    <Container>
-      <Title>Body Fat Percentage Scanner</Title>
+    <div className="Container">
+      <h1 className="Title">Body Composition Scanner</h1>
       
-      <input
-        type="file"
-        accept="image/*"
-        onChange={handleImageUpload}
-        style={{ display: 'none' }}
-        id="imageInput"
-      />
-      
-      {!preview && (
-        <UploadContainer>
-          <UploadArea htmlFor="imageInput">
-            <UploadIcon size={32} />
-            <UploadText>Click or drag to upload your photo</UploadText>
-            <UploadSubText>
-              For best results, use a clear, well-lit photo
-            </UploadSubText>
-          </UploadArea>
-        </UploadContainer>
-      )}
+      <form onSubmit={handleSubmit}>
+        <div className="FormGrid">
+          <div className="FormField">
+            <label className="FormLabel">Height (in)</label>
+            <input
+              className="FormInput"
+              type="number"
+              name="height"
+              value={formData.height}
+              onChange={handleInputChange}
+              placeholder="Height in in"
+            />
+            {formErrors.height && <p className="ErrorText">{formErrors.height}</p>}
+          </div>
+          
+          <div className="FormField">
+            <label className="FormLabel">Weight (lbs)</label>
+            <input
+              className="FormInput"
+              type="number"
+              name="weight"
+              value={formData.weight}
+              onChange={handleInputChange}
+              placeholder="Weight in lbs"
+            />
+            {formErrors.weight && <p className="ErrorText">{formErrors.weight}</p>}
+          </div>
+          
+          <div className="FormField">
+            <label className="FormLabel">Age</label>
+            <input
+              className="FormInput"
+              type="number"
+              name="age"
+              value={formData.age}
+              onChange={handleInputChange}
+              placeholder="Age"
+            />
+            {formErrors.age && <p className="ErrorText">{formErrors.age}</p>}
+          </div>
+          
+          <div className="FormField">
+            <label className="FormLabel">Gender</label>
+            <select
+              className="FormSelect"
+              name="gender"
+              value={formData.gender}
+              onChange={handleInputChange}
+            >
+              <option value="">Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+            {formErrors.gender && <p className="ErrorText">{formErrors.gender}</p>}
+          </div>
+        </div>
 
-      {preview && (
-        <ImagePreview>
-          <PreviewImage src={preview} alt="Preview" isScanning={isScanning} />
-          <ScanLine isScanning={isScanning} />
-        </ImagePreview>
-      )}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          style={{ display: 'none' }}
+          id="imageInput"
+        />
+        
+        {!preview && (
+          <div className="UploadContainer">
+            <label className="UploadArea" htmlFor="imageInput">
+              <Upload className="UploadIcon" size={32} />
+              <p className="UploadText">Click or drag to upload your photo</p>
+              <p className="UploadSubText">
+                For best results, use a clear, well-lit photo
+              </p>
+            </label>
+            {formErrors.image && <p className="ErrorText">{formErrors.image}</p>}
+          </div>
+        )}
 
-      {isScanning && (
-        <LoadingSpinner>
-          <Loader size={32} color="#666" />
-        </LoadingSpinner>
-      )}
+        {preview && (
+          <div className="ImagePreview">
+            <img 
+              src={preview} 
+              alt="Preview" 
+              className={`PreviewImage ${isScanning ? 'isScanning' : ''}`}
+            />
+            <div className={`ScanLine ${isScanning ? 'isScanning' : ''}`} />
+          </div>
+        )}
 
-      {error && <ErrorMessage>{error}</ErrorMessage>}
+        {isScanning && (
+          <div className="LoadingSpinner">
+            <Loader size={32} color="#666" />
+          </div>
+        )}
 
-      {result !== null && (
-        <Result>
-          Your estimated body fat percentage is {result}%
-        </Result>
+        {!isScanning && preview && (
+          <button className="SubmitButton" type="submit" disabled={isScanning}>
+            Analyze
+          </button>
+        )}
+      </form>
+
+      {error && <div className="ErrorMessage">{error}</div>}
+
+      {results && (
+        <div className="Result">
+          <h2 className="ResultTitle">Analysis Results</h2>
+          
+          <div className="ResultSection">
+            <h3>Body Fat Percentage: {results.bodyFatPercentage}%</h3>
+            <MetricScale 
+              value={results.bodyFatPercentage} 
+              type="bodyFat"
+              gender={formData.gender}
+            />
+          </div>
+
+          <div className="ResultSection">
+            <h3>BMI: {results.bmi}</h3>
+            <MetricScale 
+              value={results.bmi} 
+              type="bmi"
+            />
+          </div>
+
+          <div className="ResultSection">
+            <h3>Lean Mass Index: {results.leanMassIndex}</h3>
+            <MetricScale 
+              value={results.leanMassIndex} 
+              type="leanMassIndex"
+            />
+          </div>
+        </div>
       )}
-    </Container>
+    </div>
   );
 };
 
-export default BodyFatScanner;
+export default BodyMetricsScanner;
