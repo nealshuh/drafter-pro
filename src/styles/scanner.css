@@ -1,0 +1,244 @@
+/* Container and main layout */
+.Container {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .Title {
+    color: #333;
+    text-align: center;
+    margin-bottom: 2rem;
+    font-size: 24px;
+  }
+  
+  /* Form Grid Layout */
+  .FormGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .FormField {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .FormLabel {
+    color: #333;
+    font-size: 14px;
+    margin-bottom: 0.5rem;
+  }
+  
+  .FormInput, .FormSelect {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+  }
+  
+  .FormInput:focus, .FormSelect:focus {
+    outline: none;
+    border-color: #666;
+  }
+  
+  .SubmitButton {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-top: 1rem;
+  }
+  
+  .SubmitButton:hover {
+    background-color: #357abd;
+  }
+  
+  .SubmitButton:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+  }
+  
+  /* Upload Area Styles */
+  .UploadContainer {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 2rem;
+  }
+  
+  .UploadArea {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 200px;
+    border: 2px dashed #666;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background-color: #ffffff;
+  }
+  
+  .UploadArea:hover {
+    border-color: #333;
+    background-color: #f8f8f8;
+  }
+  
+  .UploadIcon {
+    margin-bottom: 1rem;
+    color: #666;
+  }
+  
+  .UploadText {
+    margin: 0;
+    color: #333;
+    font-size: 16px;
+  }
+  
+  .UploadSubText {
+    margin: 8px 0 0 0;
+    color: #666;
+    font-size: 12px;
+  }
+  
+  /* Image Preview and Scanning Effects */
+  .ImagePreview {
+    position: relative;
+    max-width: 400px;
+    margin: 2rem auto;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .PreviewImage {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+  }
+  
+  .PreviewImage.isScanning {
+    filter: grayscale(50%) brightness(120%);
+    animation: scan 2s infinite linear;
+  }
+  
+  @keyframes scan {
+    0% {
+      filter: grayscale(50%) brightness(120%);
+    }
+    50% {
+      filter: grayscale(0%) brightness(100%);
+    }
+    100% {
+      filter: grayscale(50%) brightness(120%);
+    }
+  }
+  
+  .ScanLine {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #00ff00, transparent);
+    display: none;
+  }
+  
+  .ScanLine.isScanning {
+    display: block;
+    animation: scanLine 2s infinite linear;
+  }
+  
+  @keyframes scanLine {
+    0% {
+      top: 0;
+    }
+    100% {
+      top: 100%;
+    }
+  }
+  
+  /* Loading Spinner */
+  .LoadingSpinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 2rem 0;
+  }
+  
+  .LoadingSpinner svg {
+    animation: rotate 2s linear infinite;
+  }
+  
+  @keyframes rotate {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  
+  /* Error Messages */
+  .ErrorMessage {
+    color: #ff4444;
+    text-align: center;
+    margin-top: 1rem;
+  }
+  
+  .ErrorText {
+    color: #ff4444;
+    font-size: 12px;
+    margin-top: 0.25rem;
+  }
+  
+  /* Results Display */
+  .Result {
+    text-align: center;
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #f8f8f8;
+    border-radius: 8px;
+  }
+  
+  .ResultTitle {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 1rem;
+  }
+  
+  .ResultItem {
+    color: #333;
+    font-size: 16px;
+    margin: 0.5rem 0;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 640px) {
+    .FormGrid {
+      grid-template-columns: 1fr;
+    }
+    
+    .Container {
+      margin: 1rem;
+      padding: 1rem;
+    }
+    
+    .ImagePreview {
+      max-width: 100%;
+    }
+  }
